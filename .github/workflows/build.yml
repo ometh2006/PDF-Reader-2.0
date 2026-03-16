@@ -123,7 +123,7 @@ jobs:
           content = content.replace("${GITHUB_REPO}", repo)
           with open("installer.nsi", "w") as f:
               f.write(content)
-          print(f"Patched GITHUB_REPO → {repo}")
+          print(f"Patched GITHUB_REPO = {repo}")
 
       # ── 10. Build NSIS installer ──────────────────────────────────────────
       - name: Build NSIS installer
