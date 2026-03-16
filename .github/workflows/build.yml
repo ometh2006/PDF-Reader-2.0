@@ -127,10 +127,17 @@ jobs:
 
       # ── 10. Build NSIS installer ──────────────────────────────────────────
       - name: Build NSIS installer
+        shell: pwsh
         run: |
-          & "C:\Program Files (x86)\NSIS\makensis.exe" `
-            /DAPP_VERSION="${{ github.ref_name }}" `
-            installer.nsi
+          $tag = "${{ github.ref_name }}"
+          # Use semver from tag (v1.2.3) or fall back to 2.0.0 on branch builds
+          if ($tag -match '^v?(\d+\.\d+\.\d+)$') {
+            $version = $Matches[1]
+          } else {
+            $version = "2.0.0"
+          }
+          Write-Host "Building installer for version $version"
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /DAPP_VERSION="$version" installer.nsi
 
       # ── 11. Verify installer ──────────────────────────────────────────────
       - name: Verify installer
