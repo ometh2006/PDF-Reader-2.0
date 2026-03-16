@@ -1,0 +1,192 @@
+name: Build LitePDF for Windows
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-windows:
+    name: Build Windows EXE + Installer
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python ────────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Dependencies ───────────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ── 4. Generate icon ──────────────────────────────────────────────────
+      - name: Generate icon.ico
+        shell: python
+        run: |
+          import os
+          if not os.path.exists("icon.ico"):
+              from PIL import Image, ImageDraw, ImageFont
+              img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+              d   = ImageDraw.Draw(img)
+              # Page shape
+              d.rounded_rectangle([20, 10, 200, 240], radius=12,
+                                  fill="#1e1e2e", outline="#cba6f7", width=5)
+              # Fold corner
+              d.polygon([(155,10),(200,55),(155,55)], fill="#313244")
+              d.line([(155,10),(200,55)], fill="#cba6f7", width=3)
+              # Text lines
+              for y in [85, 110, 135, 160]:
+                  d.rounded_rectangle([50, y, 170, y+14], radius=3, fill="#cba6f7")
+              d.rounded_rectangle([50, 185, 120, 199], radius=3, fill="#89b4fa")
+              sizes = [(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)]
+              frames = [img.resize(s, Image.LANCZOS) for s in sizes]
+              frames[0].save("icon.ico", format="ICO", sizes=sizes,
+                             append_images=frames[1:])
+              print("icon.ico generated")
+
+      # ── 5. Version info ───────────────────────────────────────────────────
+      - name: Write version_info.txt
+        shell: python
+        run: |
+          import re
+          ref = "${{ github.ref_name }}"
+          m   = re.match(r"v?(\d+)\.(\d+)\.(\d+)", ref)
+          major, minor, patch = m.groups() if m else ("2","0","0")
+          content = f"""VSVersionInfo(
+            ffi=FixedFileInfo(
+              filevers=({major},{minor},{patch},0),
+              prodvers=({major},{minor},{patch},0),
+              mask=0x3f,flags=0x0,OS=0x40004,
+              fileType=0x1,subtype=0x0,date=(0,0)),
+            kids=[
+              StringFileInfo([StringTable('040904B0',[
+                StringStruct('CompanyName','LitePDF'),
+                StringStruct('FileDescription','Lightweight PDF Reader & Editor'),
+                StringStruct('FileVersion','{major}.{minor}.{patch}.0'),
+                StringStruct('InternalName','LitePDF'),
+                StringStruct('LegalCopyright','2024 LitePDF'),
+                StringStruct('OriginalFilename','LitePDF.exe'),
+                StringStruct('ProductName','LitePDF'),
+                StringStruct('ProductVersion','{major}.{minor}.{patch}.0'),
+              ])]),
+              VarFileInfo([VarStruct('Translation',[0x0409,1200])])
+            ])"""
+          open("version_info.txt","w").write(content)
+          print(f"version_info.txt for v{major}.{minor}.{patch}")
+
+      # ── 6. Build EXE ──────────────────────────────────────────────────────
+      - name: Build EXE with PyInstaller
+        run: pyinstaller litepdf.spec --clean --noconfirm
+
+      # ── 7. Verify EXE ─────────────────────────────────────────────────────
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = "dist\LitePDF.exe"
+          if (Test-Path $exe) {
+            $mb = [math]::Round((Get-Item $exe).Length/1MB, 1)
+            Write-Host "✅ LitePDF.exe built — $mb MB"
+          } else {
+            Write-Error "❌ EXE not found"; exit 1
+          }
+
+      # ── 8. Install NSIS ───────────────────────────────────────────────────
+      - name: Install NSIS
+        run: choco install nsis --yes --no-progress
+
+      # ── 9. Inject GitHub repo into NSIS script ────────────────────────────
+      - name: Patch installer.nsi with repo name
+        shell: python
+        run: |
+          repo = "${{ github.repository }}"
+          with open("installer.nsi", "r") as f:
+              content = f.read()
+          content = content.replace("${GITHUB_REPO}", repo)
+          with open("installer.nsi", "w") as f:
+              f.write(content)
+          print(f"Patched GITHUB_REPO → {repo}")
+
+      # ── 10. Build NSIS installer ──────────────────────────────────────────
+      - name: Build NSIS installer
+        run: |
+          & "C:\Program Files (x86)\NSIS\makensis.exe" `
+            /DAPP_VERSION="${{ github.ref_name }}" `
+            installer.nsi
+
+      # ── 11. Verify installer ──────────────────────────────────────────────
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "LitePDF-Setup-*.exe" | Select-Object -First 1
+          if ($setup) {
+            $mb = [math]::Round($setup.Length/1MB, 1)
+            Write-Host "✅ Installer: $($setup.Name) — $mb MB"
+          } else {
+            Write-Error "❌ Installer not found"; exit 1
+          }
+
+      # ── 12. Upload both artifacts ─────────────────────────────────────────
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: LitePDF-Portable-EXE
+          path: dist/LitePDF.exe
+          retention-days: 30
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LitePDF-Windows-Installer
+          path: LitePDF-Setup-*.exe
+          retention-days: 30
+
+      # ── 13. GitHub Release (tagged builds only) ───────────────────────────
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            LitePDF-Setup-*.exe
+            dist/LitePDF.exe
+          name: "LitePDF ${{ github.ref_name }}"
+          body: |
+            ## LitePDF ${{ github.ref_name }}
+
+            ### 📥 Downloads
+
+            | File | Description |
+            |---|---|
+            | `LitePDF-Setup-*.exe` | **Recommended** — installer with Start Menu + file association |
+            | `LitePDF.exe` | Portable — single file, no install needed |
+
+            ### ✨ What's new in v2
+
+            - 🔎 **Full-document search** — live highlighting, navigate matches with ▲/▼, case toggle
+            - 🖍 **Highlight tool** — drag across text to add persistent gold highlights (saved to PDF)
+            - 🖼 **Visual thumbnails** — sidebar shows real page previews, not page numbers
+            - 📦 **NSIS installer** — Start Menu shortcut, Add/Remove Programs, `.pdf` file association
+
+            ### System Requirements
+            Windows 10 / 11 (64-bit) · ~30 MB RAM idle · < 5 % CPU
+          generate_release_notes: true
+          draft: false
+          prerelease: false
