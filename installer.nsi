@@ -6,7 +6,10 @@
 Unicode True
 
 !define APP_NAME        "LitePDF"
-!define APP_VERSION     "2.0.0"
+; APP_VERSION can be overridden from the command line: /DAPP_VERSION=x.y.z
+!ifndef APP_VERSION
+  !define APP_VERSION   "2.0.0"
+!endif
 !define APP_EXE         "LitePDF.exe"
 !define APP_PUBLISHER   "LitePDF Project"
 !define APP_URL         "https://github.com/${GITHUB_REPO}"
