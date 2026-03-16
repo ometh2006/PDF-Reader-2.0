@@ -31,8 +31,8 @@ BrandingText      "${APP_NAME} ${APP_VERSION} Installer"
 !include "FileFunc.nsh"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON          "${APP_EXE}"   ; uses embedded icon from the exe
-!define MUI_UNICON        "${APP_EXE}"
+!define MUI_ICON          "icon.ico"
+!define MUI_UNICON        "icon.ico"
 !define MUI_WELCOMEPAGE_TITLE  "Welcome to ${APP_NAME} Setup"
 !define MUI_WELCOMEPAGE_TEXT   \
     "This wizard will install ${APP_NAME} ${APP_VERSION} on your computer.$\r$\n$\r$\n\
@@ -41,7 +41,6 @@ Click Next to continue."
 
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\${APP_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT    "Launch ${APP_NAME} now"
-!define MUI_FINISHPAGE_SHOWREADME  ""
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
